@@ -1,0 +1,177 @@
+# Local development stack for gitea-twincat-viewer.
+#
+# Usage:
+#
+#   docker compose up --build
+#
+# Then open http://localhost:3000 in your browser. Login with
+# username `gitea_admin` and password `adminpass123` (configurable via
+# env vars). A demo repository `gitea_admin/twincat-demo` is created
+# automatically and seeded with the example TwinCAT files so you can
+# open a `.TcPOU` file and immediately see the rendered HTML.
+
+services:
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: gitea-twincat
+    restart: unless-stopped
+    environment:
+      # Required envs for first-run automated install.
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: "devsecretkey-replace-in-prod-do-not-use-in-prod-1234567890"
+      GITEA__server__ROOT_URL: "http://localhost:3000/"
+      GITEA__server__DOMAIN: "localhost"
+      GITEA__server__SSH_DOMAIN: "localhost"
+      GITEA__server__SSH_PORT: "22"
+      GITEA__service__DISABLE_REGISTRATION: "false"
+      GITEA__webui__THEME: "gitea-auto"
+      GITEA__markup__twincat__ENABLED: "true"
+      GITEA__markup__twincat__FILE_EXTENSIONS: ".TcPOU,.TcDUT,.TcGVL"
+      GITEA__markup__twincat__RENDER_COMMAND: "/opt/gitea-extensions/gitea-twincat-viewer"
+      GITEA__markup__twincat__IS_INPUT_FILE: "true"
+      GITEA__markup__twincat__RENDER_CONTENT_MODE: "no-sanitizer"
+      USER_UID: "1000"
+      USER_GID: "1000"
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea-data:/data
+      # Shared extension directory: the bootstrap copies the viewer
+      # binary here at startup. The path inside the container matches
+      # RENDER_COMMAND in env vars above.
+      - extension-bin:/opt/gitea-extensions
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+      installer:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # Wait for the viewer binary on the shared volume (seeded by
+        # the seeder service that runs before us).
+        if [ ! -x /opt/gitea-extensions/gitea-twincat-viewer ]; then
+          echo "[gitea] waiting for viewer binary on shared volume..."
+          for i in $$(seq 1 60); do
+            if [ -x /opt/gitea-extensions/gitea-twincat-viewer ]; then break; fi
+            sleep 1
+          done
+        fi
+        # Run the image's entrypoint to set up /etc/passwd and folders,
+        # then exec gitea via su-exec (matches s6/gitea/run pattern).
+        exec /usr/bin/entrypoint /sbin/su-exec git /usr/local/bin/gitea web
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  seeder:
+    # The seeder image needs a shell and `cp`/`chmod`. We start from
+    # alpine and COPY the viewer binary in.
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.seeder
+      args:
+        VERSION: dev
+    image: gitea-twincat-viewer-seeder:dev
+    volumes:
+      - extension-bin:/opt/gitea-extensions
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "[seeder] copying viewer binary to /opt/gitea-extensions/"
+        cp /gitea-twincat-viewer /opt/gitea-extensions/gitea-twincat-viewer
+        chmod +x /opt/gitea-extensions/gitea-twincat-viewer
+        echo "[seeder] done; viewer ready"
+
+  installer:
+    # Pre-creates the install lock and admin user via the official
+    # gitea CLI. Runs once per fresh data volume.
+    image: gitea/gitea:1.22
+    user: "0:0"
+    volumes:
+      - gitea-data:/data
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA_CUSTOM: /data/gitea
+      GITEA_WORK_DIR: /data/gitea
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        /usr/bin/entrypoint true
+        # Set up Gitea install via the CLI. `gitea admin
+        # user create` requires the install lock to already exist
+        # for most operations, so we generate the install lock file
+        # directly when none is present. The first time gitea web
+        # boots it sees the install lock and serves normally.
+        if [ ! -f /data/gitea/conf/installation-lock ]; then
+          echo "[installer] writing minimal config + install lock"
+          mkdir -p /data/gitea/conf /data/git/.ssh
+          cat > /data/gitea/conf/app.ini <<'EOF'
+        [server]
+        DOMAIN = localhost
+        HTTP_PORT = 3000
+        ROOT_URL = http://localhost:3000/
+        SSH_DOMAIN = localhost
+        SSH_PORT = 22
+        LFS_START_SERVER = true
+
+        [database]
+        PATH = /data/gitea/db.sqlite
+        DB_TYPE = sqlite3
+
+        [security]
+        INSTALL_LOCK = true
+        SECRET_KEY = devsecretkey-replace-in-prod-do-not-use-in-prod-1234567890
+
+        [service]
+        DISABLE_REGISTRATION = false
+
+        [markup.twincat]
+        ENABLED = true
+        FILE_EXTENSIONS = .TcPOU,.TcDUT,.TcGVL
+        RENDER_COMMAND = /opt/gitea-extensions/gitea-twincat-viewer
+        IS_INPUT_FILE = true
+        RENDER_CONTENT_MODE = no-sanitizer
+        EOF
+          # Ensure git user owns everything writable by Gitea at runtime.
+          chown -R git:git /data
+          /sbin/su-exec git /usr/local/bin/gitea migrate 2>&1 | tail -20 || true
+          /sbin/su-exec git /usr/local/bin/gitea admin user create \
+            --username gitea_admin \
+            --password adminpass123 \
+            --email 'admin@example.local' \
+            --admin \
+            --must-change-password=false 2>&1 | tail -5 || true
+        fi
+        echo "[installer] done"
+
+  bootstrap:
+    # Reuse the seeder image so we have both the viewer binary and
+    # the example fixtures available inside the container without
+    # depending on host bind mounts.
+    image: gitea-twincat-viewer-seeder:dev
+    depends_on:
+      gitea:
+        condition: service_healthy
+    environment:
+      GITEA_HOST: http://gitea:3000
+    volumes:
+      - gitea-data:/data
+    entrypoint:
+      - /bin/sh
+      - -c
+      - exec /usr/local/bin/bootstrap.sh
+
+volumes:
+  gitea-data:
+  extension-bin:

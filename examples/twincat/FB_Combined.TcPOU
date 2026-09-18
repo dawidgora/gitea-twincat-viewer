@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.10">
+  <POU Name="FB_Combined" KindOfPOU="Element">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Combined
+VAR_INPUT
+    bEnabled : BOOL;
+    nValue   : INT;
+    rScale   : REAL;
+    sLabel   : STRING;
+END_VAR
+VAR_OUTPUT
+    nResult  : INT;
+    rResult  : REAL;
+    sStatus  : STRING;
+END_VAR
+VAR
+    bActive  : BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[bActive := bEnabled;
+IF bActive THEN
+    nResult := nValue;
+    rResult := INT_TO_REAL(nValue) * rScale;
+    sStatus := CONCAT(sLabel, ' enabled');
+ELSE
+    nResult := 0;
+    rResult := 0.0;
+    sStatus := CONCAT(sLabel, ' disabled');
+END_IF;
+]]></ST>
+    </Implementation>
+    <Property Name="Status">
+      <Declaration><![CDATA[PROPERTY Status : STRING]]></Declaration>
+      <Implementation><![CDATA[Status := sStatus;]]></Implementation>
+    </Property>
+    <Method Name="Reset" KindOfMethod="Element">
+      <Declaration><![CDATA[METHOD Reset : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation><![CDATA[nResult := 0;
+rResult := 0.0;
+sStatus := '';
+Reset := TRUE;]]></Implementation>
+    </Method>
+    <Action Name="Apply" KindOfAction="Element">
+      <Implementation><![CDATA[IF bEnabled THEN
+    sStatus := CONCAT(sLabel, ' applied');
+END_IF;]]></Implementation>
+    </Action>
+  </POU>
+</TcPlcObject>

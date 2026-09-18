@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.10">
+  <GVL Name="GVL_Shared">
+    <Declaration><![CDATA[VAR_GLOBAL
+    bReady  : BOOL := TRUE;
+    nLimit  : INT := 10;
+    rFactor : REAL := 1.0;
+    sLabel  : STRING := 'Sample';
+END_VAR
+]]></Declaration>
+  </GVL>
+</TcPlcObject>

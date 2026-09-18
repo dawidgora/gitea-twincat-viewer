@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.10">
+  <POU Name="FB_Boolean" KindOfPOU="Element">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Boolean
+VAR_INPUT
+    bInput  : BOOL;
+END_VAR
+VAR_OUTPUT
+    bResult : BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[bResult := NOT bInput;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
