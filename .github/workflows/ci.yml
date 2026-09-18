@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test, vet, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+      - name: go mod tidy
+        run: go mod tidy
+      - name: go vet
+        run: go vet ./...
+      - name: gofmt
+        run: |
+          test -z "$(gofmt -l .)"
+      - name: test
+        run: go test ./... -count=1
+      - name: build
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o bin/gitea-twincat-viewer ./cmd/gitea-twincat-viewer
+      - name: upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitea-twincat-viewer-linux-amd64
+          path: bin/gitea-twincat-viewer
