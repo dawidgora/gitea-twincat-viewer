@@ -84,14 +84,6 @@ gitea:
       RENDER_CONTENT_MODE: no-sanitizer
 ```
 
-Install or upgrade the official chart with the values file:
-
-```sh
-helm repo add gitea-charts https://dl.gitea.com/charts/
-helm repo update
-helm upgrade --install gitea gitea-charts/gitea --values values.yaml
-```
-
 ### Docker Compose
 
 For a normal Docker Compose installation, use a one-shot Alpine downloader and
