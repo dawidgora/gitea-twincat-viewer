@@ -29,7 +29,7 @@ jobs:
         run: |
           CGO_ENABLED=0 go build -trimpath -o bin/gitea-twincat-viewer ./cmd/gitea-twincat-viewer
       - name: upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gitea-twincat-viewer-linux-amd64
           path: bin/gitea-twincat-viewer
