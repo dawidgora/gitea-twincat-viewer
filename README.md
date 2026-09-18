@@ -131,3 +131,7 @@ volumes:
 ```
 
 Open an issue if you need instructions for another installation method.
+
+## Support
+
+[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me A Coffee">](https://buymeacoffee.com/dawidgora)
