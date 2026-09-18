@@ -69,6 +69,98 @@ END_VAR
 	}
 }
 
+// TestParseTcPOUWithSTMethods verifies that sibling methods using the
+// Implementation/ST shape are retained in source order.
+func TestParseTcPOUWithSTMethods(t *testing.T) {
+	src := `<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <TcPOU Name="FB_FourMethods" Id="{00000000-0000-0000-0000-000000000000}" SpecialFunction="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FourMethods
+VAR
+    nValue : INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nValue := 1;]]></ST>
+    </Implementation>
+    <Method Name="First" Id="{00000000-0000-0000-0000-000000000001}" Declaration="">
+      <Declaration>
+        <![CDATA[METHOD First : BOOL]]>
+      </Declaration>
+      <Implementation>
+        <ST><![CDATA[First := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Second" Id="{00000000-0000-0000-0000-000000000002}" Declaration="">
+      <Declaration>
+        <![CDATA[METHOD Second : BOOL]]>
+      </Declaration>
+      <Implementation>
+        <ST><![CDATA[Second := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Third" Id="{00000000-0000-0000-0000-000000000003}" Declaration="">
+      <Declaration>
+        <![CDATA[METHOD Third : BOOL]]>
+      </Declaration>
+      <Implementation>
+        <ST><![CDATA[Third := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Fourth" Id="{00000000-0000-0000-0000-000000000004}" Declaration="">
+      <Declaration>
+        <![CDATA[METHOD Fourth : BOOL]]>
+      </Declaration>
+      <Implementation>
+        <ST><![CDATA[Fourth := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </TcPOU>
+</TcPlcObject>`
+
+	f, err := Parse([]byte(src), ".TcPOU")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if !strings.Contains(f.Declaration, "FUNCTION_BLOCK FB_FourMethods") {
+		t.Fatalf("Declaration missing parent header: %q", f.Declaration)
+	}
+	wantMethods := []struct {
+		name           string
+		declaration    string
+		implementation string
+	}{
+		{name: "First", declaration: "METHOD First : BOOL", implementation: "First := TRUE;"},
+		{name: "Second", declaration: "METHOD Second : BOOL", implementation: "Second := TRUE;"},
+		{name: "Third", declaration: "METHOD Third : BOOL", implementation: "Third := TRUE;"},
+		{name: "Fourth", declaration: "METHOD Fourth : BOOL", implementation: "Fourth := TRUE;"},
+	}
+	if f.Implementation != "nValue := 1;" {
+		t.Fatalf("parent Implementation = %q, want only parent ST", f.Implementation)
+	}
+	if len(f.Methods) != len(wantMethods) {
+		t.Fatalf("len(Methods) = %d, want %d", len(f.Methods), len(wantMethods))
+	}
+	for i, want := range wantMethods {
+		got := f.Methods[i]
+		if got.Name != want.name {
+			t.Fatalf("Methods[%d].Name = %q, want %q", i, got.Name, want.name)
+		}
+		if got.Declaration != want.declaration {
+			t.Fatalf("Methods[%d].Declaration = %q, want %q", i, got.Declaration, want.declaration)
+		}
+		if got.Implementation != want.implementation {
+			t.Fatalf("Methods[%d].Implementation = %q, want %q", i, got.Implementation, want.implementation)
+		}
+	}
+	for _, want := range wantMethods {
+		if strings.Contains(f.Implementation, want.implementation) {
+			t.Fatalf("parent Implementation contains member payload %q: %q", want.implementation, f.Implementation)
+		}
+	}
+}
+
 // TestParseTcDUT verifies a generic DUT with STRUCT.
 func TestParseTcDUT(t *testing.T) {
 	src := `<?xml version="1.0"?>
@@ -95,6 +187,9 @@ END_TYPE
 	}
 	if f.DUTType != twincat.DUTTypeStruct {
 		t.Fatalf("DUTType = %v, want STRUCT", f.DUTType)
+	}
+	if len(f.Members) != 0 {
+		t.Fatalf("len(Members) = %d, want 0 for DUT source declarations", len(f.Members))
 	}
 	if !strings.Contains(f.Declaration, "END_STRUCT") {
 		t.Fatalf("Declaration missing END_STRUCT: %q", f.Declaration)

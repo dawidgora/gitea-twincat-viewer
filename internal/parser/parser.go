@@ -47,8 +47,6 @@ type parserState struct {
 	gvl            []twincat.Member
 	attributes     []string
 	currentMethod  *twincat.Method
-	currentBlock   string // "declaration" or "implementation" or ""
-	captureTarget  *strings.Builder
 }
 
 // element names we look for inside a TwinCAT document.
@@ -62,7 +60,6 @@ const (
 	elTcGVL          = "TcGVL"
 	elDeclaration    = "Declaration"
 	elImplementation = "Implementation"
-	elST             = "ST"
 	elMethod         = "Method"
 	elProperty       = "Property"
 	elAction         = "Action"
@@ -147,8 +144,9 @@ func inferKind(state *parserState) twincat.Kind {
 	return twincat.KindUnknown
 }
 
-// handleStart processes the opening of an XML element, descending into
-// any inner element that carries Structured Text content.
+// handleStart processes the opening of an XML element. Text-bearing blocks
+// are consumed atomically so nested wrappers cannot re-enter the event
+// handlers or consume tokens belonging to their siblings.
 func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) error {
 	name := start.Name.Local
 
@@ -180,13 +178,14 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 	case elTcGVL:
 		s.name = attr(start, "Name")
 	case elDeclaration:
-		s.currentBlock = elDeclaration
+		contents, err := captureElement(start, dec)
+		if err != nil {
+			return err
+		}
 		if s.currentMethod != nil {
-			var buf strings.Builder
-			s.captureBlock(start, dec, &buf)
-			s.currentMethod.Declaration = buf.String()
+			s.currentMethod.Declaration = strings.TrimSpace(contents)
 		} else {
-			s.captureBlock(start, dec, &s.declaration)
+			s.declaration.WriteString(contents)
 			if s.pouType == "" {
 				if t := detectPOUType(s.declaration.String()); t != "" {
 					s.pouType = t
@@ -197,30 +196,17 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 					s.dutType = t
 				}
 			}
+			s.finishDeclaration()
 		}
 	case elImplementation:
-		s.currentBlock = elImplementation
-		// Many TwinCAT POU documents wrap the implementation body in a
-		// child <ST><![CDATA[...]]></ST>. captureCDATA descends into
-		// inner elements and captures their text. If the <ST> wrapper
-		// is absent, captureCDATA still records the direct text.
-		if s.currentMethod != nil {
-			var buf strings.Builder
-			s.captureBlock(start, dec, &buf)
-			s.currentMethod.Implementation = buf.String()
-		} else {
-			s.captureBlock(start, dec, &s.implementation)
+		contents, err := captureElement(start, dec)
+		if err != nil {
+			return err
 		}
-	case elST:
-		// Inside <Implementation><ST>…</ST></Implementation>. Treat as
-		// direct capture; the surrounding Implementation close tag
-		// will clear currentBlock.
-		if s.currentBlock == elImplementation {
-			if s.captureTarget != nil {
-				s.captureCDATA(start, dec, s.captureTarget)
-			} else {
-				s.captureCDATA(start, dec, &s.implementation)
-			}
+		if s.currentMethod != nil {
+			s.currentMethod.Implementation = strings.TrimSpace(contents)
+		} else {
+			s.implementation.WriteString(contents)
 		}
 	case elMethod:
 		m := twincat.Method{
@@ -241,51 +227,26 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 		}
 		s.currentMethod = &m
 	case elDefinition:
-		if s.currentMethod != nil {
-			var buf strings.Builder
-			s.captureCDATA(start, dec, &buf)
-			s.currentMethod.Declaration = buf.String()
+		contents, err := captureElement(start, dec)
+		if err != nil {
+			return err
 		}
-	default:
-		// Unknown element: descend and capture its CDATA into the
-		// appropriate block so we never silently lose content.
-		if s.currentMethod != nil && s.currentBlock == elImplementation {
-			if s.captureTarget != nil {
-				s.captureCDATA(start, dec, s.captureTarget)
-			} else {
-				var buf strings.Builder
-				s.captureCDATA(start, dec, &buf)
-				s.currentMethod.Implementation = buf.String()
-			}
+		if s.currentMethod != nil {
+			s.currentMethod.Declaration = strings.TrimSpace(contents)
 		}
 	}
 	return nil
 }
 
-// handleEnd processes the closing of an XML element.
+// handle processes the closing of an XML element.
 func (s *parserState) handle(end xml.EndElement) {
 	name := end.Name.Local
 
 	switch name {
-	case elDeclaration, elImplementation:
-		s.currentBlock = ""
 	case elMethod, elProperty, elAction:
 		if s.currentMethod != nil {
 			s.methods = append(s.methods, *s.currentMethod)
 			s.currentMethod = nil
-		}
-	}
-
-	// Some TwinCAT GVL files put declaration lines into nested
-	// elements (e.g. <Declaration><Line>...</Line></Declaration>).
-	// After a Declaration block closes, look at what we captured and
-	// break it into individual lines if appropriate.
-	if name == elDeclaration && len(s.gvl) == 0 && len(s.members) == 0 {
-		lines := splitDeclaration(s.declaration.String())
-		if s.pouType == "" && s.dutType == "" {
-			s.gvl = lines
-		} else if s.dutType != "" {
-			s.members = lines
 		}
 	}
 }
@@ -295,58 +256,44 @@ func (s *parserState) handleEnd(end xml.EndElement) {
 	s.handle(end)
 }
 
-// captureBlock captures a declaration or implementation into dst while
-// making that destination available to nested wrappers such as <ST>.
-func (s *parserState) captureBlock(start xml.StartElement, dec *xml.Decoder, dst *strings.Builder) {
-	previous := s.captureTarget
-	s.captureTarget = dst
-	s.captureCDATA(start, dec, dst)
-	s.captureTarget = previous
+// finishDeclaration classifies declaration lines for GVL files.
+// Declaration elements are consumed atomically by handleStart, so this
+// replaces the declaration-end handling used by the streaming dispatcher.
+func (s *parserState) finishDeclaration() {
+	if s.pouType != "" || s.dutType != "" || len(s.gvl) > 0 || len(s.members) > 0 {
+		return
+	}
+
+	s.gvl = splitDeclaration(s.declaration.String())
 }
 
-// captureCDATA consumes the body of the current element as a string
-// (including CDATA sections) and appends it to dst. It then advances
-// past the matching end element. This is safe because encoding/xml
-// resolves CDATA into regular character data of type xml.CharData.
-//
-// captureCDATA dispatches nested StartElement events through the
-// main handleStart pipeline so siblings like <Method> inside a POU
-// are still picked up, while keeping a separate stack so nested
-// captureCDATA calls do not lose their place.
-func (s *parserState) captureCDATA(start xml.StartElement, dec *xml.Decoder, dst *strings.Builder) {
-	type frame struct {
-		name  string
-		depth int
-	}
-	stack := []frame{{name: start.Name.Local, depth: 1}}
+// captureElement consumes the complete body of start as one decoder
+// operation. Nested wrappers such as <ST> contribute their character data,
+// but are not dispatched through the parser state machine.
+func captureElement(start xml.StartElement, dec *xml.Decoder) (string, error) {
+	var contents strings.Builder
+	stack := []xml.Name{start.Name}
 
 	for len(stack) > 0 {
 		tok, err := dec.Token()
 		if err != nil {
-			return
+			return "", fmt.Errorf("%w: capturing <%s>: %v", ErrMalformedXML, start.Name.Local, err)
 		}
+
 		switch t := tok.(type) {
 		case xml.StartElement:
-			top := &stack[len(stack)-1]
-			top.depth++
-			stack = append(stack, frame{name: t.Name.Local, depth: 1})
-			// Dispatch the nested start to the normal handler so the
-			// parser can detect Methods / Properties / nested
-			// <Declaration> elements etc.
-			if err := s.handleStart(t, dec); err != nil {
-				return
-			}
+			stack = append(stack, t.Name)
 		case xml.EndElement:
-			top := &stack[len(stack)-1]
-			top.depth--
-			if top.depth == 0 {
-				stack = stack[:len(stack)-1]
-				s.handle(t)
+			if len(stack) == 0 || t.Name != stack[len(stack)-1] {
+				return "", fmt.Errorf("%w: mismatched closing element </%s>", ErrMalformedXML, t.Name.Local)
 			}
+			stack = stack[:len(stack)-1]
 		case xml.CharData:
-			dst.Write(t)
+			contents.Write([]byte(t))
 		}
 	}
+
+	return contents.String(), nil
 }
 
 // attr returns the value of attribute name on start, or "" if missing.

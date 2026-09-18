@@ -38,6 +38,10 @@ func TestRenderFixtures(t *testing.T) {
 			must: []string{"FUNCTION_BLOCK", "PROPERTY", "Status", "Reset", "Apply"},
 		},
 		{
+			path: "../../examples/twincat/FB_WrappedMembers.TcPOU",
+			must: []string{"FUNCTION_BLOCK", "PROPERTY", "Status", "Start", "Stop", "Refresh"},
+		},
+		{
 			path: "../../examples/twincat/ST_Record.TcDUT",
 			must: []string{"STRUCT", "END_STRUCT"},
 		},
