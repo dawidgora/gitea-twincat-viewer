@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.10">
+  <POU Name="FB_WrappedMembers" KindOfPOU="Element">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_WrappedMembers
+VAR_INPUT
+    bEnable : BOOL;
+    sLabel  : STRING;
+END_VAR
+VAR_OUTPUT
+    sStatus : STRING;
+END_VAR
+VAR
+    nRuns : UINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF bEnable THEN
+    sStatus := CONCAT(sLabel, ' active');
+ELSE
+    sStatus := CONCAT(sLabel, ' idle');
+END_IF;
+]]></ST>
+    </Implementation>
+    <Property Name="Status">
+      <Declaration><![CDATA[PROPERTY Status : STRING]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status := sStatus;]]></ST>
+      </Implementation>
+    </Property>
+    <Method Name="Start" KindOfMethod="Element">
+      <Declaration><![CDATA[METHOD Start : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF bEnable THEN
+    nRuns := nRuns + 1;
+    Start := TRUE;
+ELSE
+    Start := FALSE;
+END_IF;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Stop" KindOfMethod="Element">
+      <Declaration><![CDATA[METHOD Stop : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stop := nRuns > 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="Refresh" KindOfAction="Element">
+      <Implementation>
+        <ST><![CDATA[sStatus := CONCAT(sLabel, ' refreshed');]]></ST>
+      </Implementation>
+    </Action>
+  </POU>
+</TcPlcObject>
