@@ -3,13 +3,82 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ['**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Optional release tag override
+        required: false
+        type: string
+
+permissions: {}
 
 jobs:
+  release-info:
+    name: Resolve release
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          TAG_OVERRIDE: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          publish=false
+          prerelease=false
+          tag=dev
+
+          if [[ "$EVENT_NAME" == push && "$REF_TYPE" == tag ]]; then
+            if [[ "$REF_NAME" =~ $semver_re ]]; then
+              tag="$REF_NAME"
+              publish=true
+              semver_without_build="${tag%%+*}"
+              if [[ "$semver_without_build" == *-* ]]; then
+                prerelease=true
+              fi
+            else
+              echo "Skipping release for non-SemVer tag: $REF_NAME"
+            fi
+          elif [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            publish=true
+            if [[ -n "$TAG_OVERRIDE" ]]; then
+              tag="$TAG_OVERRIDE"
+            else
+              branch="$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//')"
+              [[ -n "$branch" ]] || branch=ref
+              tag="${branch}-${GITHUB_SHA:0:8}"
+            fi
+
+            if [[ "$tag" =~ $semver_re && "${tag%%+*}" != *-* ]]; then
+              prerelease=false
+            else
+              prerelease=true
+            fi
+          fi
+
+          {
+            echo "publish=$publish"
+            echo "prerelease=$prerelease"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
   test:
     name: Test, vet, build
+    needs: release-info
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -25,11 +94,63 @@ jobs:
           test -z "$(gofmt -l .)"
       - name: test
         run: go test ./... -count=1
-      - name: build
+      - name: build release assets
+        env:
+          VERSION: ${{ needs.release-info.outputs.tag }}
         run: |
-          CGO_ENABLED=0 go build -trimpath -o bin/gitea-twincat-viewer ./cmd/gitea-twincat-viewer
-      - name: upload binary
+          mkdir -p bin
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-X main.version=${VERSION}" \
+              -o "bin/gitea-twincat-viewer-linux-${arch}" \
+              ./cmd/gitea-twincat-viewer
+          done
+      - name: upload release assets
         uses: actions/upload-artifact@v7
         with:
-          name: gitea-twincat-viewer-linux-amd64
-          path: bin/gitea-twincat-viewer
+          name: gitea-twincat-viewer-linux
+          path: bin/gitea-twincat-viewer-linux-*
+
+  publish:
+    name: Publish GitHub release
+    if: ${{ needs.release-info.outputs.publish == 'true' }}
+    needs: [release-info, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: gitea-twincat-viewer-linux
+          path: assets
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PRERELEASE: ${{ needs.release-info.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.release-info.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --prerelease="$PRERELEASE"
+          else
+            create_args=(release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes)
+            if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+              create_args+=(--target "$GITHUB_SHA")
+            fi
+            if [[ "$PRERELEASE" == true ]]; then
+              create_args+=(--prerelease)
+            fi
+            gh "${create_args[@]}"
+          fi
+
+          gh release upload "$RELEASE_TAG" \
+            assets/gitea-twincat-viewer-linux-amd64 \
+            assets/gitea-twincat-viewer-linux-arm64 \
+            --clobber
