@@ -156,34 +156,18 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 
 	switch name {
 	case elTcPlcObject:
-	case elPOU:
+	case elPOU, elTcPOU:
 		s.objectKind = twincat.KindPOU
 		s.name = attr(start, "Name")
-		// TwinCAT uses KindOfPOU for the "Element / Function / Method"
-		// designator; the *POU kind* (FUNCTION_BLOCK/PROGRAM/FUNCTION)
-		// is recorded as the first keyword in the declaration. So we
-		// only treat the attribute as authoritative when it already
-		// looks like one of those keywords.
-		if v := attr(start, "KindOfPOU"); v != "" && s.pouType == "" {
-			s.pouType = pouTypeFromKeyword(strings.ToUpper(strings.TrimSpace(v)))
+		// Use a recognized KindOfPOU when present; otherwise detect from the declaration.
+		if s.pouType == "" {
+			s.pouType = pouTypeFromKeyword(strings.ToUpper(attr(start, "KindOfPOU")))
 		}
-	case elGVL:
+	case elGVL, elTcGVL:
 		s.objectKind = twincat.KindGVL
 		s.name = attr(start, "Name")
-	case elDUT:
+	case elDUT, elTcDUT:
 		s.objectKind = twincat.KindDUT
-		s.name = attr(start, "Name")
-	case elTcPOU:
-		s.objectKind = twincat.KindPOU
-		s.name = attr(start, "Name")
-		if v := attr(start, "KindOfPOU"); v != "" && s.pouType == "" {
-			s.pouType = pouTypeFromKeyword(strings.ToUpper(strings.TrimSpace(v)))
-		}
-	case elTcDUT:
-		s.objectKind = twincat.KindDUT
-		s.name = attr(start, "Name")
-	case elTcGVL:
-		s.objectKind = twincat.KindGVL
 		s.name = attr(start, "Name")
 	case elDeclaration:
 		contents, err := captureElement(start, dec)

@@ -158,6 +158,55 @@ func TestCanonicalKindOfPOUAndUnclassifiedKinds(t *testing.T) {
 	}
 }
 
+func TestPOUWrapperAttributesPreserveClassification(t *testing.T) {
+	for _, tc := range []struct {
+		root, attr, declaration string
+		want                    twincat.POUType
+	}{
+		{"POU", "  fUnCtIoN  ", "PROGRAM P", twincat.POUTypeFunction},
+		{"TcPOU", "  fUnCtIoN  ", "PROGRAM P", twincat.POUTypeFunction},
+		{"POU", "not-a-kind", "FUNCTION_BLOCK P", twincat.POUTypeFunctionBlock},
+		{"TcPOU", "not-a-kind", "FUNCTION_BLOCK P", twincat.POUTypeFunctionBlock},
+	} {
+		xml := `<TcPlcObject><` + tc.root + ` Name="P" KindOfPOU="` + tc.attr + `"><Declaration>` + tc.declaration + `</Declaration></` + tc.root + `></TcPlcObject>`
+		f, err := Parse([]byte(xml), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Kind != twincat.KindPOU || f.POUType != tc.want || len(f.GVL) != 0 {
+			t.Errorf("%s KindOfPOU=%q: kind=%v pou=%q GVL=%#v", tc.root, tc.attr, f.Kind, f.POUType, f.GVL)
+		}
+	}
+
+	state := &parserState{pouType: twincat.POUTypeProgram}
+	start := xml.StartElement{Name: xml.Name{Local: elPOU}, Attr: []xml.Attr{{Name: xml.Name{Local: "KindOfPOU"}, Value: "FUNCTION"}}}
+	if err := state.handleStart(start, nil); err != nil {
+		t.Fatal(err)
+	}
+	if state.pouType != twincat.POUTypeProgram {
+		t.Errorf("preassigned POU type overwritten: %q", state.pouType)
+	}
+}
+
+func TestEmptyWrapperKindsInferWithoutExtension(t *testing.T) {
+	for _, tc := range []struct {
+		root, ext string
+		want      twincat.Kind
+	}{
+		{"POU", "", twincat.KindPOU}, {"TcPOU", "tmp", twincat.KindPOU},
+		{"GVL", "", twincat.KindGVL}, {"TcGVL", "tmp", twincat.KindGVL},
+		{"DUT", "", twincat.KindDUT}, {"TcDUT", "tmp", twincat.KindDUT},
+	} {
+		f, err := Parse([]byte(`<TcPlcObject><`+tc.root+` Name="X"/></TcPlcObject>`), tc.ext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Kind != tc.want {
+			t.Errorf("empty <%s> ext=%q got %v want %v", tc.root, tc.ext, f.Kind, tc.want)
+		}
+	}
+}
+
 func TestDUTClassificationThroughXML(t *testing.T) {
 	cases := []struct {
 		name, root, ext, declaration string
