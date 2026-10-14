@@ -158,6 +158,62 @@ func TestCanonicalKindOfPOUAndUnclassifiedKinds(t *testing.T) {
 	}
 }
 
+func TestDUTClassificationThroughXML(t *testing.T) {
+	cases := []struct {
+		name, root, ext, declaration string
+		want                         twincat.DUTType
+	}{
+		{"struct", "DUT", "", "// STRUCT is only a comment\n{attribute 'x'} TYPE T_S : (* UNION *) STRUCT\n value : INT;\nEND_STRUCT END_TYPE", twincat.DUTTypeStruct},
+		{"union-wrapper", "TcDUT", "tmp", "TYPE T_U : UNION a : INT; END_UNION END_TYPE", twincat.DUTTypeUnion},
+		{"enum-extension", "DUT", ".TcDUT", "TYPE T_E : (A, B); END_TYPE", twincat.DUTTypeEnum},
+		{"alias-string", "TcDUT", "", `(* TYPE in comment *) TYPE T_A : STRING := "STRUCT END_STRUCT $" quote"; END_TYPE`, twincat.DUTTypeAlias},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			xml := `<TcPlcObject><` + tc.root + ` Name="T"><Declaration>` + tc.declaration + `</Declaration></` + tc.root + `></TcPlcObject>`
+			f, err := Parse([]byte(xml), tc.ext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.Kind != twincat.KindDUT || f.DUTType != tc.want || len(f.GVL) != 0 || f.Declaration != tc.declaration {
+				t.Errorf("got kind=%v dut=%v gvl=%#v declaration=%q", f.Kind, f.DUTType, f.GVL, f.Declaration)
+			}
+		})
+	}
+}
+
+func TestDisposableControlFixtureRemainsUnclassified(t *testing.T) {
+	data, err := os.ReadFile("../../examples/twincat/Disposable_Control.TcPOU")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected struct {
+		POU struct {
+			Declaration string `xml:"Declaration"`
+			Methods     []struct {
+				Name        string `xml:"Name,attr"`
+				Declaration string `xml:"Declaration"`
+			} `xml:"Method"`
+		} `xml:"POU"`
+	}
+	if err := xml.Unmarshal(data, &expected); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Parse(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Control intentionally omits the attributes that distinguish the issue fixture, so its declaration remains unclassified.
+	if f.Kind != twincat.KindPOU || f.POUType != twincat.POUTypeFunctionBlock || f.Raw != string(data) || len(f.Methods) != len(expected.POU.Methods) || f.Declaration != strings.TrimSpace(expected.POU.Declaration) || len(f.GVL) != 0 {
+		t.Fatalf("control fixture changed: kind=%v pou=%q methods=%d declaration=%q", f.Kind, f.POUType, len(f.Methods), f.Declaration)
+	}
+	for i, want := range expected.POU.Methods {
+		if f.Methods[i].Name != want.Name || f.Methods[i].Declaration != strings.TrimSpace(want.Declaration) {
+			t.Errorf("control method %d changed: %#v", i, f.Methods[i])
+		}
+	}
+}
+
 func TestDetectDUTTypeIgnoresCommentsAndStrings(t *testing.T) {
 	for _, tc := range []struct {
 		s    string
@@ -175,6 +231,9 @@ func TestDetectDUTTypeIgnoresCommentsAndStrings(t *testing.T) {
 		{"TYPE X : STRING := 'brace } $\"'; END_TYPE", twincat.DUTTypeAlias},
 		{"TYPE X : STRING := 'dollar $$ and \\\\'; END_TYPE", twincat.DUTTypeAlias},
 		{"TYPE X : STRING := 'one backslash \\'; END_TYPE", twincat.DUTTypeAlias},
+		{`TYPE X : STRING := "comment // (* {STRUCT}"; END_TYPE`, twincat.DUTTypeAlias},
+		{`TYPE X : STRING := "comment // (* {STRUCT} $" quote"; END_TYPE`, twincat.DUTTypeAlias},
+		{`{attribute 'escaped $' brace }' := '(* //'} TYPE X : STRUCT END_STRUCT`, twincat.DUTTypeStruct},
 		{"TYPE X : STRING := 'unterminated", ""},
 		{"(* unterminated TYPE X : STRUCT", ""},
 		{"{attribute 'unterminated} TYPE X : STRUCT", ""},

@@ -37,7 +37,7 @@ func firstDeclarationToken(s string) (string, bool) {
 		break
 	}
 	start := 0
-	for start < len(s) && (s[start] == '_' || s[start] >= '0' && s[start] <= '9' || s[start] >= 'A' && s[start] <= 'Z' || s[start] >= 'a' && s[start] <= 'z') {
+	for start < len(s) && isIdent(s[start]) {
 		start++
 	}
 	if start == 0 {
@@ -101,7 +101,7 @@ func commentEnd(s string, start int) int {
 	return -1
 }
 
-// cleanST removes comments and quoted strings while retaining token spacing.
+// cleanST removes comments, attributes, and quoted strings while retaining token spacing.
 func cleanST(s string) (string, bool) {
 	var b strings.Builder
 	for i := 0; i < len(s); {
@@ -145,6 +145,8 @@ func cleanST(s string) (string, bool) {
 	return b.String(), true
 }
 
+// classifyDUT is a display classifier, not a full ST grammar validator;
+// malformed lexical spans and unrecognized declarations remain unclassified.
 func classifyDUT(src string) twincat.DUTType {
 	clean, ok := cleanST(src)
 	if !ok {
