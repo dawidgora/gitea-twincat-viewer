@@ -20,21 +20,6 @@ readable, syntax-highlighted HTML through a single static binary.
 | `.TcGVL` | GVL | Name and global variable declarations |
 | `.TcIO` | Interface | Name, interface declaration, method parameters, and property signatures |
 
-### `.TcIO` interfaces
-
-`.TcIO` files define PLC interfaces, not physical I/O configuration.
-An interface declares method and property signatures without implementation code.
-Its declaration can use `EXTENDS` to inherit other interfaces.
-
-The renderer reads `<Itf>` inside `<TcPlcObject>` and displays the interface declaration,
-method parameters, and property signatures. Nested `Get` and `Set` elements do not
-replace the property declaration.
-
-See [the example interface](examples/twincat/I_Device.TcIO) and
-[Beckhoff's interface documentation](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/4256428299.html).
-The XML layout was checked against
-[a public Beckhoff-USA-Community example](https://github.com/Beckhoff-USA-Community/AMR_Demo/blob/master/AMR_Demo/PLC/AMR/Interface/I_AmrModule.TcIO).
-
 ## Gitea configuration
 
 Configure the renderer through Gitea's `app.ini`. The simplest approach is to
