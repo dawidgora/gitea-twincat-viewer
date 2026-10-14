@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="Disposable" Id="{7157366b-07e8-46fc-aa2f-38c2e2eab868}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK ABSTRACT Disposable IMPLEMENTS IDisposable
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Folder Name="Destructor" Id="{a244c56d-214c-0539-02cc-30986d16b566}" />
+    <Method Name="Dispose" Id="{6c98f403-5dd6-4f9d-bc0a-e406c48a07a8}">
+      <Declaration><![CDATA[METHOD Dispose
+VAR
+	pDisposable : POINTER TO Disposable;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[pDisposable := THIS;
+__DELETE(pDisposable);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="FB_exit" Id="{0d1dd945-173c-0626-2abd-474b81e0db04}" FolderPath="Destructor\">
+      <Declaration><![CDATA[METHOD FB_exit : BOOL
+VAR_INPUT
+	bInCopyCode : BOOL; // if TRUE, the exit method is called for exiting an instance that is copied afterwards (online change).
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// by default you would return if this is an in copy code, i.e. online change to this class
+IF bInCopyCode THEN
+	RETURN;
+END_IF
+
+// A word of warning.  fb_exit does not NOT operate in the same way as a typical inherited method.  If a child class does not implement fb_exit then it does not
+// gain this one for itself. 
+// The system will automatically call each fb_exit on each layer of inheritance one by one, starting with the child class and making it's way to the parent.
+// Therefore code in here will only be triggered once the system reaches this layer of the object's deletion.  So by this point, the child class and 
+// all of it's variables will already have had fb_exit called by the time we reach this point!]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

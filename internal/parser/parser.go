@@ -37,6 +37,7 @@ var ErrMalformedXML = errors.New("twincat: malformed XML")
 
 // parserState accumulates intermediate state during a single parse run.
 type parserState struct {
+	objectKind     twincat.Kind
 	name           string
 	pouType        twincat.POUType
 	dutType        twincat.DUTType
@@ -133,6 +134,9 @@ func Parse(data []byte, ext string) (*twincat.File, error) {
 
 // inferKind picks a Kind based on which root element was observed.
 func inferKind(state *parserState) twincat.Kind {
+	if state.objectKind != twincat.KindUnknown {
+		return state.objectKind
+	}
 	switch {
 	case state.pouType != "":
 		return twincat.KindPOU
@@ -152,30 +156,18 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 
 	switch name {
 	case elTcPlcObject:
-	case elPOU:
+	case elPOU, elTcPOU:
+		s.objectKind = twincat.KindPOU
 		s.name = attr(start, "Name")
-		// TwinCAT uses KindOfPOU for the "Element / Function / Method"
-		// designator; the *POU kind* (FUNCTION_BLOCK/PROGRAM/FUNCTION)
-		// is recorded as the first keyword in the declaration. So we
-		// only treat the attribute as authoritative when it already
-		// looks like one of those keywords.
-		if v := attr(start, "KindOfPOU"); v != "" {
-			if isPOUKeyword(v) {
-				s.pouType = twincat.POUType(v)
-			}
+		// Use a recognized KindOfPOU when present; otherwise detect from the declaration.
+		if s.pouType == "" {
+			s.pouType = pouTypeFromKeyword(strings.ToUpper(attr(start, "KindOfPOU")))
 		}
-	case elGVL:
+	case elGVL, elTcGVL:
+		s.objectKind = twincat.KindGVL
 		s.name = attr(start, "Name")
-	case elDUT:
-		s.name = attr(start, "Name")
-	case elTcPOU:
-		s.name = attr(start, "Name")
-		if v := attr(start, "KindOfPOU"); v != "" && isPOUKeyword(v) {
-			s.pouType = twincat.POUType(v)
-		}
-	case elTcDUT:
-		s.name = attr(start, "Name")
-	case elTcGVL:
+	case elDUT, elTcDUT:
+		s.objectKind = twincat.KindDUT
 		s.name = attr(start, "Name")
 	case elDeclaration:
 		contents, err := captureElement(start, dec)
@@ -191,7 +183,7 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 					s.pouType = t
 				}
 			}
-			if s.dutType == "" {
+			if s.dutType == "" && s.objectKind == twincat.KindDUT {
 				if t := detectDUTType(s.declaration.String()); t != "" {
 					s.dutType = t
 				}
@@ -260,6 +252,9 @@ func (s *parserState) handleEnd(end xml.EndElement) {
 // Declaration elements are consumed atomically by handleStart, so this
 // replaces the declaration-end handling used by the streaming dispatcher.
 func (s *parserState) finishDeclaration() {
+	if s.objectKind != twincat.KindGVL && s.objectKind != twincat.KindUnknown {
+		return
+	}
 	if s.pouType != "" || s.dutType != "" || len(s.gvl) > 0 || len(s.members) > 0 {
 		return
 	}
@@ -306,69 +301,41 @@ func attr(start xml.StartElement, name string) string {
 	return ""
 }
 
-// detectPOUType inspects the first non-blank line of a declaration to
-// detect "FUNCTION_BLOCK", "PROGRAM", "FUNCTION", "METHOD", "PROPERTY"
-// or "ACTION". Returns empty string when none match.
+// detectPOUType finds the first meaningful declaration token, ignoring
+// whitespace, attributes and comments. Returns empty when it is not a keyword.
 func detectPOUType(decl string) twincat.POUType {
-	first := firstNonBlankLine(decl)
-	upper := strings.ToUpper(strings.TrimSpace(first))
-	return pouTypeFromKeyword(upper)
+	token, ok := firstDeclarationToken(decl)
+	if !ok {
+		return ""
+	}
+	return pouTypeFromKeyword(strings.ToUpper(token))
 }
 
 // pouTypeFromKeyword returns the POUType for any of the recognised
 // POU/Method/Property/Action keywords, or "" otherwise.
 func pouTypeFromKeyword(upper string) twincat.POUType {
-	switch {
-	case strings.HasPrefix(upper, "FUNCTION_BLOCK"):
+	switch upper {
+	case "FUNCTION_BLOCK":
 		return twincat.POUTypeFunctionBlock
-	case strings.HasPrefix(upper, "PROGRAM"):
+	case "PROGRAM":
 		return twincat.POUTypeProgram
-	case strings.HasPrefix(upper, "FUNCTION"):
+	case "FUNCTION":
 		return twincat.POUTypeFunction
-	case strings.HasPrefix(upper, "METHOD"):
+	case "METHOD":
 		return twincat.POUTypeMethod
-	case strings.HasPrefix(upper, "PROPERTY"):
+	case "PROPERTY":
 		return twincat.POUTypeProperty
-	case strings.HasPrefix(upper, "ACTION"):
+	case "ACTION":
 		return twincat.POUTypeAction
 	}
 	return ""
-}
-
-// isPOUKeyword reports whether v is one of the POU keywords.
-func isPOUKeyword(v string) bool {
-	return pouTypeFromKeyword(strings.ToUpper(strings.TrimSpace(v))) != ""
 }
 
 // detectDUTType inspects the body of a DUT declaration to detect
 // STRUCT / ENUM / UNION / TYPE (alias). The first keyword is
 // usually TYPE <name> :, so we look deeper into the body.
 func detectDUTType(decl string) twincat.DUTType {
-	upper := strings.ToUpper(decl)
-	switch {
-	case strings.Contains(upper, "END_STRUCT"):
-		return twincat.DUTTypeStruct
-	case strings.Contains(upper, "END_ENUM"):
-		return twincat.DUTTypeEnum
-	case strings.Contains(upper, "END_UNION"):
-		return twincat.DUTTypeUnion
-	}
-	// TYPE without STRUCT/ENUM/UNION is an alias.
-	if strings.HasPrefix(strings.TrimSpace(upper), "TYPE") {
-		return twincat.DUTTypeAlias
-	}
-	return ""
-}
-
-// firstNonBlankLine returns the first line that contains at least one
-// non-whitespace character, or "" if none exists.
-func firstNonBlankLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if strings.TrimSpace(line) != "" {
-			return line
-		}
-	}
-	return ""
+	return classifyDUT(decl)
 }
 
 // splitDeclaration breaks a block of declarations into individual
