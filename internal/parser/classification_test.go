@@ -182,7 +182,7 @@ func TestDUTClassificationThroughXML(t *testing.T) {
 	}
 }
 
-func TestDisposableControlFixtureRemainsUnclassified(t *testing.T) {
+func TestDisposableControlFixturePreservesCode(t *testing.T) {
 	data, err := os.ReadFile("../../examples/twincat/Disposable_Control.TcPOU")
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestDisposableControlFixtureRemainsUnclassified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Control intentionally omits the attributes that distinguish the issue fixture, so its declaration remains unclassified.
+	// The control omits the three leading attributes but retains the same POU type and methods.
 	if f.Kind != twincat.KindPOU || f.POUType != twincat.POUTypeFunctionBlock || f.Raw != string(data) || len(f.Methods) != len(expected.POU.Methods) || f.Declaration != strings.TrimSpace(expected.POU.Declaration) || len(f.GVL) != 0 {
 		t.Fatalf("control fixture changed: kind=%v pou=%q methods=%d declaration=%q", f.Kind, f.POUType, len(f.Methods), f.Declaration)
 	}
