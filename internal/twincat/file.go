@@ -16,6 +16,7 @@ const (
 	KindPOU
 	KindDUT
 	KindGVL
+	KindInterface
 )
 
 // String returns a stable lower-case label used in output and logs.
@@ -27,6 +28,8 @@ func (k Kind) String() string {
 		return "dut"
 	case KindGVL:
 		return "gvl"
+	case KindInterface:
+		return "interface"
 	default:
 		return "unknown"
 	}
@@ -43,6 +46,8 @@ func KindFromExtension(ext string) Kind {
 		return KindDUT
 	case "tcgvl":
 		return KindGVL
+	case "tcio":
+		return KindInterface
 	}
 	return KindUnknown
 }
@@ -58,6 +63,7 @@ const (
 	POUTypeMethod        POUType = "METHOD"
 	POUTypeProperty      POUType = "PROPERTY"
 	POUTypeAction        POUType = "ACTION"
+	POUTypeInterface     POUType = "INTERFACE"
 )
 
 // DUTType identifies the structural type of a DUT.

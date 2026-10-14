@@ -129,7 +129,7 @@ if [[ -d "${EXAMPLES_DIR}" ]]; then
   git -C "${WORK}" config user.email "${ADMIN_EMAIL}"
   git -C "${WORK}" remote add origin \
     "http://${ADMIN_USER}:${ADMIN_PASS}@gitea:3000/${REPO_OWNER}/${REPO_NAME}.git"
-  cp "${EXAMPLES_DIR}"/*.TcPOU "${EXAMPLES_DIR}"/*.TcDUT "${EXAMPLES_DIR}"/*.TcGVL "${WORK}/" 2>/dev/null || cp -r "${EXAMPLES_DIR}/." "${WORK}/"
+  cp "${EXAMPLES_DIR}"/*.TcPOU "${EXAMPLES_DIR}"/*.TcDUT "${EXAMPLES_DIR}"/*.TcGVL "${EXAMPLES_DIR}"/*.TcIO "${WORK}/" 2>/dev/null || cp -r "${EXAMPLES_DIR}/." "${WORK}/"
   git -C "${WORK}" add .
   if git -C "${WORK}" diff --cached --quiet; then
     echo "[bootstrap] no changes to commit"

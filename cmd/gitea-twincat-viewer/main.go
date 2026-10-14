@@ -1,5 +1,5 @@
 // Command gitea-twincat-viewer renders Beckhoff TwinCAT XML files
-// (`.TcPOU`, `.TcDUT`, `.TcGVL`) into HTML.
+// (`.TcPOU`, `.TcDUT`, `.TcGVL`, `.TcIO`) into HTML.
 //
 // Two invocation modes are supported:
 //

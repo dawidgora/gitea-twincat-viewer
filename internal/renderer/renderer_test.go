@@ -119,6 +119,129 @@ func TestRenderGVL(t *testing.T) {
 	mustContain(t, html, `style="color:#953800;color:var(--tcv-type);font-weight:600">INT</span>`)
 }
 
+// TestRenderInterface exercises the happy path for a .TcIO interface.
+// Interfaces reuse the POU layout/heading machinery but show an
+// INTERFACE unit label and render methods/properties as members.
+func TestRenderInterface(t *testing.T) {
+	f := &twincat.File{
+		Kind:    twincat.KindInterface,
+		Name:    "I_Device",
+		POUType: twincat.POUTypeInterface,
+		Declaration: `{attribute 'qualified_only'}
+// Interface contract
+INTERFACE I_Device EXTENDS I_Base`,
+		Methods: []twincat.Method{
+			{
+				Name:        "ReadValue",
+				Type:        twincat.POUTypeMethod,
+				Declaration: "METHOD ReadValue : BOOL\nVAR_INPUT\n    channel : INT;\nEND_VAR",
+			},
+			{
+				Name:        "Enabled",
+				Type:        twincat.POUTypeProperty,
+				Declaration: "PROPERTY Enabled : BOOL",
+			},
+			{
+				Name:        "Reset",
+				Type:        twincat.POUTypeMethod,
+				Declaration: "METHOD Reset",
+			},
+		},
+	}
+
+	html := Render(f, Options{})
+
+	// Real interface heading, never a generic GLOBAL_VARIABLE_LIST label.
+	mustContain(t, html, `<section class="tcv-block tcv-pou" aria-label="INTERFACE I_Device">`)
+	mustContain(t, html, `<span class="tcv-unit-name">I_Device</span><span class="tcv-unit-type">INTERFACE</span>`)
+	if strings.Contains(html, "GLOBAL_VARIABLE_LIST") {
+		t.Fatalf("interface must not be rendered as a global variable list")
+	}
+
+	// Attributes and comments precede the INTERFACE keyword in the
+	// declaration listing.
+	mustContain(t, html, `{attribute &#39;qualified_only&#39;}`)
+	mustContain(t, html, `// Interface contract`)
+	mustContain(t, html, `INTERFACE I_Device`)
+	mustContain(t, html, `EXTENDS`)
+	mustContain(t, html, `I_Base`)
+	commentIdx := strings.Index(html, "// Interface contract</span>")
+	interfaceIdx := strings.Index(html, "INTERFACE</span> I_Device")
+	if commentIdx == -1 || interfaceIdx == -1 || commentIdx > interfaceIdx {
+		t.Fatalf("interface comment must precede INTERFACE keyword in output")
+	}
+
+	// Method members keep their labels and input arguments.
+	mustContain(t, html, `<details class="tcv-block tcv-member" open aria-label="METHOD ReadValue">`)
+	mustContain(t, html, `<span class="tcv-unit-name">ReadValue</span><span class="tcv-unit-type">METHOD</span>`)
+	mustContain(t, html, `style="color:#cf222e;color:var(--tcv-kw);font-weight:600">METHOD</span> ReadValue : <span style="color:#953800;color:var(--tcv-type);font-weight:600">BOOL</span>`)
+	mustContain(t, html, `style="color:#cf222e;color:var(--tcv-kw);font-weight:600">VAR_INPUT</span>`)
+	mustContain(t, html, `channel : <span style="color:#953800;color:var(--tcv-type);font-weight:600">INT</span>;`)
+	mustContain(t, html, `style="color:#cf222e;color:var(--tcv-kw);font-weight:600">END_VAR</span>`)
+
+	// Property signature is maintained as a labelled member.
+	mustContain(t, html, `<details class="tcv-block tcv-property" open aria-label="PROPERTY Enabled">`)
+	mustContain(t, html, `<span class="tcv-unit-name">Enabled</span><span class="tcv-unit-type">PROPERTY</span>`)
+	mustContain(t, html, `style="color:#cf222e;color:var(--tcv-kw);font-weight:600">PROPERTY</span> Enabled : <span style="color:#953800;color:var(--tcv-type);font-weight:600">BOOL</span>`)
+
+	// Following method is still rendered after the property.
+	mustContain(t, html, `<details class="tcv-block tcv-member" open aria-label="METHOD Reset">`)
+
+	// Gitea wants a fragment, so Render must NOT emit a full document.
+	if strings.Contains(html, "<!DOCTYPE") {
+		t.Fatalf("Render should emit a fragment, not a full HTML document")
+	}
+}
+
+// TestRenderInterfaceStandalone verifies the full-document variant
+// works for interface files too.
+func TestRenderInterfaceStandalone(t *testing.T) {
+	f := &twincat.File{
+		Kind:        twincat.KindInterface,
+		Name:        "I_Empty",
+		POUType:     twincat.POUTypeInterface,
+		Declaration: "INTERFACE I_Empty\nEND_INTERFACE",
+	}
+	html := RenderStandalone(f, Options{})
+	mustContain(t, html, "<!DOCTYPE html>")
+	mustContain(t, html, "<title>I_Empty</title>")
+	mustContain(t, html, `<span class="tcv-unit-name">I_Empty</span><span class="tcv-unit-type">INTERFACE</span>`)
+	mustContain(t, html, `INTERFACE I_Empty`)
+}
+
+// TestRenderInterfaceEscaping verifies that interface names and
+// member declarations containing HTML metacharacters are escaped.
+func TestRenderInterfaceEscaping(t *testing.T) {
+	f := &twincat.File{
+		Kind:        twincat.KindInterface,
+		Name:        `<script>alert("xss")</script>`,
+		POUType:     twincat.POUTypeInterface,
+		Declaration: `INTERFACE <img onerror=x>`,
+		Methods: []twincat.Method{
+			{
+				Name:        "<b>evil</b>",
+				Type:        twincat.POUTypeMethod,
+				Declaration: "METHOD <b>evil</b> : BOOL\nVAR_INPUT\n    x : <script>x</script>;\nEND_VAR",
+			},
+		},
+	}
+
+	html := Render(f, Options{})
+	if strings.Contains(html, "<script>alert") {
+		t.Fatalf("renderer emitted raw script tag: %q", html)
+	}
+	if strings.Contains(html, "<img onerror=x>") {
+		t.Fatalf("renderer emitted raw img tag: %q", html)
+	}
+	mustContain(t, html, "&lt;script&gt;alert")
+	mustContain(t, html, "&lt;img onerror=x&gt;")
+	mustContain(t, html, "&lt;b&gt;evil&lt;/b&gt;")
+	// The method label must be escaped.
+	mustContain(t, html, `<span class="tcv-unit-name">&lt;b&gt;evil&lt;/b&gt;</span><span class="tcv-unit-type">METHOD</span>`)
+	// Input argument type is escaped inside the code listing.
+	mustContain(t, html, "&lt;script&gt;x&lt;/script&gt;")
+}
+
 // TestRenderHTMLEscaping verifies that POU names containing HTML
 // metacharacters are escaped and cannot break out of attribute or
 // text contexts.

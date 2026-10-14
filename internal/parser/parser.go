@@ -3,10 +3,11 @@
 // safety: it uses encoding/xml without enabling external entity
 // resolution, which is the default behaviour of the standard library.
 //
-// The parser supports the three file kinds the MVP focuses on:
+// The parser supports these TwinCAT file kinds:
 //   - .TcPOU  → KindPOU
 //   - .TcDUT  → KindDUT
 //   - .TcGVL  → KindGVL
+//   - .TcIO   → KindInterface
 //
 // Anything else returns KindUnknown so the caller can decide how to
 // react.
@@ -59,12 +60,15 @@ const (
 	elTcPOU          = "TcPOU"
 	elTcDUT          = "TcDUT"
 	elTcGVL          = "TcGVL"
+	elItf            = "Itf"
 	elDeclaration    = "Declaration"
 	elImplementation = "Implementation"
 	elMethod         = "Method"
 	elProperty       = "Property"
 	elAction         = "Action"
 	elDefinition     = "Definition"
+	elGet            = "Get"
+	elSet            = "Set"
 )
 
 // Parse converts raw XML bytes into a twincat.File. The provided
@@ -169,6 +173,10 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 	case elDUT, elTcDUT:
 		s.objectKind = twincat.KindDUT
 		s.name = attr(start, "Name")
+	case elItf:
+		s.objectKind = twincat.KindInterface
+		s.name = attr(start, "Name")
+		s.pouType = twincat.POUTypeInterface
 	case elDeclaration:
 		contents, err := captureElement(start, dec)
 		if err != nil {
@@ -218,6 +226,11 @@ func (s *parserState) handleStart(start xml.StartElement, dec *xml.Decoder) erro
 			Type: twincat.POUTypeAction,
 		}
 		s.currentMethod = &m
+	case elGet, elSet:
+		if s.objectKind == twincat.KindInterface && s.currentMethod != nil && s.currentMethod.Type == twincat.POUTypeProperty {
+			_, err := captureElement(start, dec)
+			return err
+		}
 	case elDefinition:
 		contents, err := captureElement(start, dec)
 		if err != nil {

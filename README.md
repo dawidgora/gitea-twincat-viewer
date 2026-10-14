@@ -1,8 +1,8 @@
 # gitea-twincat-viewer
 
 `gitea-twincat-viewer` is a pure Go Gitea external renderer for Beckhoff
-TwinCAT files. It turns the Structured Text in `POU`, `DUT`, and `GVL` files
-into readable, syntax-highlighted HTML through a single static binary.
+TwinCAT files. It turns `.TcPOU`, `.TcDUT`, `.TcGVL`, and `.TcIO` files into
+readable, syntax-highlighted HTML through a single static binary.
 
 ## Screenshots
 
@@ -18,6 +18,7 @@ into readable, syntax-highlighted HTML through a single static binary.
 | `.TcPOU` | POU | Name, kind, declaration, implementation, methods, properties, and actions |
 | `.TcDUT` | DUT | Name, kind, and declaration |
 | `.TcGVL` | GVL | Name and global variable declarations |
+| `.TcIO` | Interface | Name, interface declaration, method parameters, and property signatures |
 
 ## Gitea configuration
 
@@ -29,7 +30,7 @@ For example, `deploy/gitea/app.ini.d/twincat.ini` can contain:
 ```ini
 [markup.twincat]
 ENABLED = true
-FILE_EXTENSIONS = .TcPOU,.TcDUT,.TcGVL
+FILE_EXTENSIONS = .TcPOU,.TcDUT,.TcGVL,.TcIO
 RENDER_COMMAND = /opt/gitea-extensions/gitea-twincat-viewer
 IS_INPUT_FILE = true
 RENDER_CONTENT_MODE = no-sanitizer
@@ -78,7 +79,7 @@ gitea:
   config:
     "markup.twincat":
       ENABLED: true
-      FILE_EXTENSIONS: .TcPOU,.TcDUT,.TcGVL
+      FILE_EXTENSIONS: .TcPOU,.TcDUT,.TcGVL,.TcIO
       RENDER_COMMAND: /opt/gitea-extensions/gitea-twincat-viewer
       IS_INPUT_FILE: true
       RENDER_CONTENT_MODE: no-sanitizer
@@ -120,7 +121,7 @@ services:
       - twincat-extensions:/opt/gitea-extensions:ro
     environment:
       GITEA__markup__twincat__ENABLED: "true"
-      GITEA__markup__twincat__FILE_EXTENSIONS: ".TcPOU,.TcDUT,.TcGVL"
+      GITEA__markup__twincat__FILE_EXTENSIONS: ".TcPOU,.TcDUT,.TcGVL,.TcIO"
       GITEA__markup__twincat__RENDER_COMMAND: /opt/gitea-extensions/gitea-twincat-viewer
       GITEA__markup__twincat__IS_INPUT_FILE: "true"
       GITEA__markup__twincat__RENDER_CONTENT_MODE: no-sanitizer

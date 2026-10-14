@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <Itf Name="I_Device" Id="{b7f34f64-9ec4-43e3-92ca-41e3431d02a1}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+// Interface contract
+INTERFACE I_Device EXTENDS I_Base
+]]></Declaration>
+    <Method Name="ReadValue">
+      <Declaration><![CDATA[METHOD ReadValue : BOOL
+VAR_INPUT
+    channel : INT;
+END_VAR]]></Declaration>
+    </Method>
+    <Property Name="Enabled">
+      <Declaration><![CDATA[PROPERTY Enabled : BOOL]]></Declaration>
+      <Get Name="Get"><Declaration><![CDATA[]]></Declaration></Get>
+      <Set Name="Set"><Declaration><![CDATA[]]></Declaration></Set>
+    </Property>
+    <Method Name="Reset">
+      <Declaration><![CDATA[METHOD Reset]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>
