@@ -1,8 +1,8 @@
 # gitea-twincat-viewer
 
 `gitea-twincat-viewer` is a pure Go Gitea external renderer for Beckhoff
-TwinCAT files. It turns the Structured Text in `POU`, `DUT`, and `GVL` files
-into readable, syntax-highlighted HTML through a single static binary.
+TwinCAT files. It turns `.TcPOU`, `.TcDUT`, `.TcGVL`, and `.TcIO` files into
+readable, syntax-highlighted HTML through a single static binary.
 
 ## Screenshots
 
@@ -18,6 +18,22 @@ into readable, syntax-highlighted HTML through a single static binary.
 | `.TcPOU` | POU | Name, kind, declaration, implementation, methods, properties, and actions |
 | `.TcDUT` | DUT | Name, kind, and declaration |
 | `.TcGVL` | GVL | Name and global variable declarations |
+| `.TcIO` | Interface | Name, interface declaration, method parameters, and property signatures |
+
+### `.TcIO` interfaces
+
+`.TcIO` files define PLC interfaces, not physical I/O configuration.
+An interface declares method and property signatures without implementation code.
+Its declaration can use `EXTENDS` to inherit other interfaces.
+
+The renderer reads `<Itf>` inside `<TcPlcObject>` and displays the interface declaration,
+method parameters, and property signatures. Nested `Get` and `Set` elements do not
+replace the property declaration.
+
+See [the example interface](examples/twincat/I_Device.TcIO) and
+[Beckhoff's interface documentation](https://infosys.beckhoff.com/content/1033/tc3_plc_intro/4256428299.html).
+The XML layout was checked against
+[a public Beckhoff-USA-Community example](https://github.com/Beckhoff-USA-Community/AMR_Demo/blob/master/AMR_Demo/PLC/AMR/Interface/I_AmrModule.TcIO).
 
 ## Gitea configuration
 
@@ -29,7 +45,7 @@ For example, `deploy/gitea/app.ini.d/twincat.ini` can contain:
 ```ini
 [markup.twincat]
 ENABLED = true
-FILE_EXTENSIONS = .TcPOU,.TcDUT,.TcGVL
+FILE_EXTENSIONS = .TcPOU,.TcDUT,.TcGVL,.TcIO
 RENDER_COMMAND = /opt/gitea-extensions/gitea-twincat-viewer
 IS_INPUT_FILE = true
 RENDER_CONTENT_MODE = no-sanitizer
@@ -78,7 +94,7 @@ gitea:
   config:
     "markup.twincat":
       ENABLED: true
-      FILE_EXTENSIONS: .TcPOU,.TcDUT,.TcGVL
+      FILE_EXTENSIONS: .TcPOU,.TcDUT,.TcGVL,.TcIO
       RENDER_COMMAND: /opt/gitea-extensions/gitea-twincat-viewer
       IS_INPUT_FILE: true
       RENDER_CONTENT_MODE: no-sanitizer
@@ -120,7 +136,7 @@ services:
       - twincat-extensions:/opt/gitea-extensions:ro
     environment:
       GITEA__markup__twincat__ENABLED: "true"
-      GITEA__markup__twincat__FILE_EXTENSIONS: ".TcPOU,.TcDUT,.TcGVL"
+      GITEA__markup__twincat__FILE_EXTENSIONS: ".TcPOU,.TcDUT,.TcGVL,.TcIO"
       GITEA__markup__twincat__RENDER_COMMAND: /opt/gitea-extensions/gitea-twincat-viewer
       GITEA__markup__twincat__IS_INPUT_FILE: "true"
       GITEA__markup__twincat__RENDER_CONTENT_MODE: no-sanitizer

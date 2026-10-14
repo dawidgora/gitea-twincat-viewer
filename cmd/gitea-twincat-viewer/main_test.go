@@ -85,6 +85,34 @@ func TestRenderMissingFile(t *testing.T) {
 	}
 }
 
+func TestRenderInterfaceFiles(t *testing.T) {
+	input, err := os.ReadFile("../../examples/twincat/I_Device.TcIO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"I_Drive.TcIO", "I_Drive.TCIO", "I_Drive.tcio", "I_Drive"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(path, input, 0600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			if err := runRender([]string{path}, &stdout); err != nil {
+				t.Fatalf("render interface: %v", err)
+			}
+			out := stdout.String()
+			for _, want := range []string{"INTERFACE", "I_Device", "PROPERTY", "Enabled", "METHOD", "ReadValue", "channel :", "BOOL"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("rendered interface missing %q", want)
+				}
+			}
+			if strings.Contains(out, "GLOBAL_VARIABLE_LIST") {
+				t.Error("interface rendered as a global variable list")
+			}
+		})
+	}
+}
+
 // TestRenderDirectory verifies that a directory is rejected with an IO
 // error rather than being treated as content.
 func TestRenderDirectory(t *testing.T) {

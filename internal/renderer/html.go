@@ -92,7 +92,7 @@ func renderBody(f *twincat.File) string {
 	}
 	var blocks []block
 	switch f.Kind {
-	case twincat.KindPOU:
+	case twincat.KindPOU, twincat.KindInterface:
 		blocks = append(blocks, block{rendered: renderPOU(f)})
 	case twincat.KindDUT:
 		if strings.TrimSpace(f.Declaration) != "" {

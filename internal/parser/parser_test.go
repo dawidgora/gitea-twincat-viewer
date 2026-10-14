@@ -407,3 +407,69 @@ func TestParseUnknownExtension(t *testing.T) {
 		t.Fatalf("Kind = %v, want KindGVL (inferred)", f.Kind)
 	}
 }
+
+func TestParseTcIOInterface(t *testing.T) {
+	data, err := os.ReadFile("../../examples/twincat/I_Device.TcIO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ext := range []string{".TcIO", ".tcIo", ".unknown", ""} {
+		f, err := Parse(data, ext)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", ext, err)
+		}
+		if f.Kind != twincat.KindInterface || f.POUType != twincat.POUTypeInterface {
+			t.Fatalf("Parse(%q) kind/type = %v/%v", ext, f.Kind, f.POUType)
+		}
+		if f.Name != "I_Device" || !strings.Contains(f.Declaration, "INTERFACE I_Device EXTENDS I_Base") {
+			t.Fatalf("Parse(%q) lost interface name/declaration: %#v", ext, f)
+		}
+		if len(f.GVL) != 0 || len(f.Members) != 0 {
+			t.Fatalf("Parse(%q) produced GVL fields: %#v", ext, f.GVL)
+		}
+		if len(f.Methods) != 3 || f.Methods[0].Declaration != "METHOD ReadValue : BOOL\nVAR_INPUT\n    channel : INT;\nEND_VAR" {
+			t.Fatalf("Parse(%q) methods: %#v", ext, f.Methods)
+		}
+		if f.Methods[1].Declaration != "PROPERTY Enabled : BOOL" || f.Methods[2].Name != "Reset" {
+			t.Fatalf("Parse(%q) property/following method: %#v", ext, f.Methods)
+		}
+	}
+}
+
+func TestParseTcIOAccessorsAreExcluded(t *testing.T) {
+	src := `<TcPlcObject><Itf Name="I_Test"><Declaration><![CDATA[INTERFACE I_Test]]></Declaration><Property Name="Value"><Declaration><![CDATA[PROPERTY Value : INT]]></Declaration><Get><Declaration><![CDATA[// accessor comment
+METHOD GETTER]]></Declaration></Get><Set><Declaration><![CDATA[(* setter *)]]></Declaration></Set></Property><Method Name="After"><Declaration><![CDATA[METHOD After]]></Declaration></Method></Itf></TcPlcObject>`
+	f, err := Parse([]byte(src), "TcIO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Methods) != 2 || f.Methods[0].Declaration != "PROPERTY Value : INT" || f.Methods[1].Name != "After" {
+		t.Fatalf("interface members = %#v", f.Methods)
+	}
+}
+
+func TestInterfaceKindHelpers(t *testing.T) {
+	if got := twincat.KindInterface.String(); got != "interface" {
+		t.Fatalf("String() = %q", got)
+	}
+	for _, ext := range []string{".TcIO", "TcIO", ".tcio"} {
+		if got := twincat.KindFromExtension(ext); got != twincat.KindInterface {
+			t.Errorf("KindFromExtension(%q) = %v", ext, got)
+		}
+	}
+}
+
+func TestParseTcIOEmptyDeclarationWithAttributes(t *testing.T) {
+	src := `<TcPlcObject><Itf Name="I_Empty"><Declaration><![CDATA[{attribute 'a'}
+// note
+(* multiline
+comment *)
+]]></Declaration><Method Name="Next"><Declaration><![CDATA[METHOD Next]]></Declaration></Method></Itf></TcPlcObject>`
+	f, err := Parse([]byte(src), ".tCiO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Kind != twincat.KindInterface || len(f.Methods) != 1 || f.Methods[0].Name != "Next" {
+		t.Fatalf("parsed interface = %#v", f)
+	}
+}
